@@ -6,6 +6,7 @@ from trimesh.intersections import slice_mesh_plane
 FACE_HOLE_SECTIONS = 48
 DRILL_OUTER_MARGIN_MM = 1.0
 DRILL_INNER_MARGIN_MM = 5.0
+COLLINEAR_TOLERANCE_MM = 0.1
 
 
 def _thickness_axis(mesh):
@@ -141,7 +142,8 @@ def _build_face_holes(
 
     cylinders = []
     for polygon in planar.polygons_full:
-        coords = np.asarray(polygon.exterior.coords)
+        merged = polygon.simplify(COLLINEAR_TOLERANCE_MM, preserve_topology=True)
+        coords = np.asarray(merged.exterior.coords)
         for start, end in zip(coords[:-1], coords[1:]):
             edge = end - start
             edge_length = np.linalg.norm(edge)
