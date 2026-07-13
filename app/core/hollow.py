@@ -138,8 +138,6 @@ def _build_face_holes(
 ):
     rotation = to_3d[:3, :3]
     fraction = hole_radius_pct / 100.0
-    height = wall_width_mm + DRILL_OUTER_MARGIN_MM + DRILL_INNER_MARGIN_MM
-    axis_offset = (DRILL_INNER_MARGIN_MM - DRILL_OUTER_MARGIN_MM) / 2
 
     cylinders = []
     for polygon in planar.polygons_full:
@@ -162,42 +160,92 @@ def _build_face_holes(
                 continue
             inward_3d = inward_3d / norm
 
-            base = to_3d @ np.array([midpoint[0], midpoint[1], 0.0, 1.0])
-            base = base[:3]
-
-            # Measure this face's own height just inside the wall: a vertical
-            # ray exactly on the boundary edge can miss the deck/hull, so each
-            # face is sampled slightly inward and keeps its own local span.
-            sample = base + inward_3d * HEIGHT_SAMPLE_INSET_MM
-            span = _local_height(mesh, sample, normal, thickness_axis, z_min)
+            # The face-centre height fixes a uniform hole size for this face.
+            center_pt = to_3d @ np.array([midpoint[0], midpoint[1], 0.0, 1.0])
+            span = _local_height(
+                mesh,
+                center_pt[:3] + inward_3d * HEIGHT_SAMPLE_INSET_MM,
+                normal,
+                thickness_axis,
+                z_min,
+            )
             if span is None:
                 continue
-            top_z, bottom_z = span
-            local_height = top_z - bottom_z
-            radius = fraction * local_height / 2
+            radius = fraction * (span[0] - span[1]) / 2
+            # Gap between holes and clearance to top/bottom edges are both this
+            # margin, so holes never overlap nor touch the deck/hull.
+            margin = (1 - fraction) * (span[0] - span[1]) / 2
             if radius <= 0 or edge_length < 2 * radius:
                 continue
 
-            center = base.copy()
-            center[thickness_axis] = (top_z + bottom_z) / 2
-            center = center + inward_3d * axis_offset
+            count = max(1, int((edge_length - margin) // (2 * radius + margin)))
+            span_used = count * 2 * radius + (count - 1) * margin
+            end_margin = (edge_length - span_used) / 2
 
-            transform = np.eye(4)
-            transform[:3, :3] = trimesh.geometry.align_vectors([0, 0, 1], inward_3d)[
-                :3, :3
-            ]
-            transform[:3, 3] = center
-
-            cylinders.append(
-                trimesh.creation.cylinder(
-                    radius=radius,
-                    height=height,
-                    sections=FACE_HOLE_SECTIONS,
-                    transform=transform,
+            for i in range(count):
+                distance = end_margin + radius + i * (2 * radius + margin)
+                point2d = start + (distance / edge_length) * edge
+                cylinder = _hole_cylinder(
+                    mesh,
+                    to_3d,
+                    inward_3d,
+                    point2d,
+                    radius,
+                    fraction,
+                    normal,
+                    thickness_axis,
+                    z_min,
+                    wall_width_mm,
                 )
-            )
+                if cylinder is not None:
+                    cylinders.append(cylinder)
 
     return cylinders
+
+
+def _hole_cylinder(
+    mesh,
+    to_3d,
+    inward_3d,
+    point2d,
+    radius,
+    fraction,
+    normal,
+    thickness_axis,
+    z_min,
+    wall_width_mm,
+):
+    base = (to_3d @ np.array([point2d[0], point2d[1], 0.0, 1.0]))[:3]
+    span = _local_height(
+        mesh, base + inward_3d * HEIGHT_SAMPLE_INSET_MM, normal, thickness_axis, z_min
+    )
+    if span is None:
+        return None
+
+    top_z, bottom_z = span
+    # Follow the deck/hull drift vertically and never let a hole exceed the
+    # local height (shorter spots shrink the hole rather than poke through).
+    local_radius = min(radius, fraction * (top_z - bottom_z) / 2)
+    if local_radius <= 0:
+        return None
+
+    height = wall_width_mm + DRILL_OUTER_MARGIN_MM + DRILL_INNER_MARGIN_MM
+    axis_offset = (DRILL_INNER_MARGIN_MM - DRILL_OUTER_MARGIN_MM) / 2
+
+    center = base.copy()
+    center[thickness_axis] = (top_z + bottom_z) / 2
+    center = center + inward_3d * axis_offset
+
+    transform = np.eye(4)
+    transform[:3, :3] = trimesh.geometry.align_vectors([0, 0, 1], inward_3d)[:3, :3]
+    transform[:3, 3] = center
+
+    return trimesh.creation.cylinder(
+        radius=local_radius,
+        height=height,
+        sections=FACE_HOLE_SECTIONS,
+        transform=transform,
+    )
 
 
 def _local_height(mesh, point_xy, normal, thickness_axis, z_min):
