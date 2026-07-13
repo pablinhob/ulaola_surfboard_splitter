@@ -7,6 +7,7 @@ FACE_HOLE_SECTIONS = 48
 DRILL_OUTER_MARGIN_MM = 1.0
 DRILL_INNER_MARGIN_MM = 5.0
 COLLINEAR_TOLERANCE_MM = 0.1
+HEIGHT_SAMPLE_INSET_MM = 1.0
 
 
 def _thickness_axis(mesh):
@@ -152,22 +153,30 @@ def _build_face_holes(
 
             midpoint = (start + end) / 2
             inward = np.array([-edge[1], edge[0]]) / edge_length
-            if not polygon.contains(Point(*(midpoint + inward * 1e-6))):
+            if not merged.contains(Point(*(midpoint + inward * 1e-6))):
                 inward = -inward
-
-            base = to_3d @ np.array([midpoint[0], midpoint[1], 0.0, 1.0])
-            base = base[:3]
-            top_z, bottom_z = _local_height(mesh, base, normal, thickness_axis, z_min)
-            local_height = top_z - bottom_z
-            radius = fraction * local_height / 2
-            if radius <= 0 or edge_length < 2 * radius:
-                continue
 
             inward_3d = rotation @ np.array([inward[0], inward[1], 0.0])
             norm = np.linalg.norm(inward_3d)
             if norm == 0:
                 continue
             inward_3d = inward_3d / norm
+
+            base = to_3d @ np.array([midpoint[0], midpoint[1], 0.0, 1.0])
+            base = base[:3]
+
+            # Measure this face's own height just inside the wall: a vertical
+            # ray exactly on the boundary edge can miss the deck/hull, so each
+            # face is sampled slightly inward and keeps its own local span.
+            sample = base + inward_3d * HEIGHT_SAMPLE_INSET_MM
+            span = _local_height(mesh, sample, normal, thickness_axis, z_min)
+            if span is None:
+                continue
+            top_z, bottom_z = span
+            local_height = top_z - bottom_z
+            radius = fraction * local_height / 2
+            if radius <= 0 or edge_length < 2 * radius:
+                continue
 
             center = base.copy()
             center[thickness_axis] = (top_z + bottom_z) / 2
@@ -195,7 +204,10 @@ def _local_height(mesh, point_xy, normal, thickness_axis, z_min):
     origin = point_xy.copy()
     origin[thickness_axis] = z_min - 1.0
     locations = mesh.ray.intersects_location([origin], [normal])[0]
-    if len(locations) == 0:
-        return mesh.bounds[1][thickness_axis], mesh.bounds[0][thickness_axis]
+    if len(locations) < 2:
+        return None
     zs = locations[:, thickness_axis]
-    return float(zs.max()), float(zs.min())
+    top, bottom = float(zs.max()), float(zs.min())
+    if top - bottom <= 0:
+        return None
+    return top, bottom
