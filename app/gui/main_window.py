@@ -115,25 +115,31 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(left_panel)
 
         style = self.style()
+        open_previous_button = self._build_action_button(
+            style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
+            "Open Previous",
+            self.on_open_previous_project,
+        )
+        save_project_button = self._build_action_button(
+            style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
+            "Save Project",
+            self.on_save_project,
+        )
+        save_as_button = self._build_action_button(
+            style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
+            "Save As",
+            self.on_save_project_as,
+        )
+        for button in (open_previous_button, save_project_button, save_as_button):
+            button.setEnabled(False)
+
         buttons = [
             self._build_action_button(
                 _build_plus_icon(), "Add STL shape", self.on_open_stl
             ),
-            self._build_action_button(
-                style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon),
-                "Open Previous",
-                self.on_open_previous_project,
-            ),
-            self._build_action_button(
-                style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
-                "Save Project",
-                self.on_save_project,
-            ),
-            self._build_action_button(
-                style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
-                "Save As",
-                self.on_save_project_as,
-            ),
+            open_previous_button,
+            save_project_button,
+            save_as_button,
         ]
         button_width = max(button.sizeHint().width() for button in buttons)
 
@@ -161,9 +167,9 @@ class MainWindow(QMainWindow):
         self.pieces_panel.apply_button.clicked.connect(self.on_apply_hollow)
 
         self.parametrization_section = AccordionSection(
-            "Splitter parametrization", self.parametrization_panel
+            " 1 - Split model into polygons", self.parametrization_panel
         )
-        self.pieces_section = AccordionSection("Split pieces", self.pieces_panel)
+        self.pieces_section = AccordionSection(" 2 - Process polygons", self.pieces_panel)
         self.parametrization_section.toggle_button.toggled.connect(
             lambda checked: self.pieces_section.set_expanded(False) if checked else None
         )
@@ -351,4 +357,5 @@ class MainWindow(QMainWindow):
             original_mesh=self.mesh,
             selection=key,
         )
+        self.pieces_panel.export_button.setEnabled(True)
         logging.info(f"Hollow applied to {key}")

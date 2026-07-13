@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -125,7 +126,7 @@ class SplitterParametrizationPanel(QWidget):
             unit=" mm",
         )
 
-        self.execute_button = QPushButton("Split polygons")
+        self.execute_button = QPushButton("Split base polygons")
         layout.addWidget(self.execute_button)
 
     def _add_slider(self, layout, title, minimum, maximum, initial, unit=""):
@@ -160,7 +161,7 @@ class PiecesPanel(QWidget):
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
 
-        self.piece_actions = QGroupBox("Piece actions")
+        self.piece_actions = QGroupBox("Polygon hollowing actions")
         actions_layout = QVBoxLayout(self.piece_actions)
         self.wall_width_slider = self._add_slider(
             actions_layout,
@@ -197,9 +198,18 @@ class PiecesPanel(QWidget):
             HOLE_RADIUS_DEFAULT_PCT,
             unit=" %",
         )
-        self.apply_button = QPushButton("Apply")
-        actions_layout.addWidget(self.apply_button)
+        self.apply_button = QPushButton("Preview hollowing")
+        self.export_button = QPushButton("Export Hollowing")
+        self.export_button.setEnabled(False)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.apply_button)
+        buttons_layout.addWidget(self.export_button)
+        actions_layout.addLayout(buttons_layout)
         layout.addWidget(self.piece_actions)
+
+        for slider in (self.top_width_slider, self.bottom_width_slider):
+            slider.setEnabled(False)
+            slider.value_label.setEnabled(False)
 
         self.reset()
         self._update_actions(None)
@@ -224,6 +234,7 @@ class PiecesPanel(QWidget):
         refresh(slider.value())
         layout.addWidget(slider)
 
+        slider.value_label = label
         return slider
 
     @staticmethod
