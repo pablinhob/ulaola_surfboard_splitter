@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/pblanco/ulaola_v2/surfboard_split_pro/com.format.sh)"
+    ],
+    "defaultMode": "default"
+  }
+}
