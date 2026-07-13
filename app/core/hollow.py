@@ -10,16 +10,13 @@ COLLINEAR_TOLERANCE_MM = 0.1
 HEIGHT_SAMPLE_INSET_MM = 1.0
 
 
-def _thickness_axis(mesh):
-    return int(np.argmin(mesh.extents))
-
-
 def hollow_piece(
     mesh,
     wall_width_mm,
     top_width_mm,
     bottom_width_mm,
     hole_radius_pct,
+    thickness_axis,
 ):
     """Hollow a core piece and drill a lightening hole in each lateral face.
 
@@ -28,8 +25,12 @@ def hollow_piece(
     0 leaves that face open). Each lateral face additionally gets a circular
     hole at its centre whose diameter is ``hole_radius_pct`` percent of the
     piece height at that location.
+
+    ``thickness_axis`` is the board's thickness axis (the lateral faces are the
+    ones parallel to it). It is supplied by the caller rather than detected
+    per piece, because a piece can be taller than it is wide, which would make
+    a per-piece smallest-extent guess pick the wrong axis.
     """
-    thickness_axis = _thickness_axis(mesh)
     normal = np.zeros(3)
     normal[thickness_axis] = 1.0
 

@@ -16,7 +16,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.hollow import hollow_piece
-from app.core.mesh_ops import compute_object_stats, load_stl, split_board
+from app.core.mesh_ops import (
+    compute_object_stats,
+    detect_thickness_axis,
+    load_stl,
+    split_board,
+)
 from app.gui.console import LogConsole
 from app.gui.panels import (
     AccordionSection,
@@ -326,10 +331,13 @@ class MainWindow(QMainWindow):
             f"Hollowing {key}: wall={wall_mm} mm, top={top_mm} mm, "
             f"bottom={bottom_mm} mm, hole={hole_pct}%"
         )
+        thickness_axis = detect_thickness_axis(self.mesh)
         self.setCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
-            hollowed = hollow_piece(mesh, wall_mm, top_mm, bottom_mm, hole_pct)
+            hollowed = hollow_piece(
+                mesh, wall_mm, top_mm, bottom_mm, hole_pct, thickness_axis
+            )
         except Exception as exc:
             logging.error(f"Could not hollow piece {key}: {exc}")
             return

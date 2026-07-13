@@ -31,6 +31,10 @@ def _detect_axes(mesh):
     return length_axis, width_axis, thickness_axis
 
 
+def detect_thickness_axis(mesh):
+    return _detect_axes(mesh)[2]
+
+
 def split_lengthwise(mesh, stringer_width_mm=0.0):
     min_bounds, max_bounds = mesh.bounds
     _, width_axis, _ = _detect_axes(mesh)
