@@ -80,6 +80,7 @@ class MeshViewer(QtInteractor):
         super().__init__(parent)
         self.set_background(VIEWER_BACKGROUND_COLOR)
         self._piece_actors = {}
+        self._piece_edge_actors = {}
         self._piece_bounds = {}
         self._outline_actors = []
         self._ghost_actor = None
@@ -102,6 +103,7 @@ class MeshViewer(QtInteractor):
         self.set_background(VIEWER_BACKGROUND_COLOR)
 
         self._piece_actors = {}
+        self._piece_edge_actors = {}
         self._piece_bounds = {}
         combined_bounds = None
         for key, segment_mesh in pieces.items():
@@ -114,6 +116,13 @@ class MeshViewer(QtInteractor):
             pv_mesh = _trimesh_to_pyvista(segment_mesh)
             self._piece_actors[key] = self.add_mesh(pv_mesh, color=piece_color)
             self._piece_bounds[key] = pv_mesh.bounds
+
+            edges = pv_mesh.extract_feature_edges()
+            if edges.n_cells:
+                self._piece_edge_actors[key] = self.add_mesh(
+                    edges, color=SPLIT_EDGE_COLOR, line_width=1.5
+                )
+
             combined_bounds = (
                 pv_mesh.bounds
                 if combined_bounds is None
@@ -146,6 +155,9 @@ class MeshViewer(QtInteractor):
         for key, actor in self._piece_actors.items():
             is_selected = self._matches_selection(selection, key)
             actor.visibility = is_selected
+            edge_actor = self._piece_edge_actors.get(key)
+            if edge_actor is not None:
+                edge_actor.visibility = is_selected
             if is_selected:
                 bounds = self._piece_bounds[key]
                 selected_bounds = (

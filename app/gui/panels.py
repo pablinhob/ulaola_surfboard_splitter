@@ -15,19 +15,39 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import (
+    BOTTOM_WIDTH_DEFAULT_MM,
+    BOTTOM_WIDTH_MAX_MM,
+    BOTTOM_WIDTH_MIN_MM,
     CUTLAP_WIDTH_DEFAULT_MM,
     CUTLAP_WIDTH_MAX_MM,
     CUTLAP_WIDTH_MIN_MM,
+    HOLE_RADIUS_DEFAULT_PCT,
+    HOLE_RADIUS_MAX_PCT,
+    HOLE_RADIUS_MIN_PCT,
     PIECE_RADIUS_DEFAULT_MM,
     PIECE_RADIUS_MAX_MM,
     PIECE_RADIUS_MIN_MM,
     STRINGER_WIDTH_DEFAULT_MM,
     STRINGER_WIDTH_MAX_MM,
     STRINGER_WIDTH_MIN_MM,
+    TOP_WIDTH_DEFAULT_MM,
+    TOP_WIDTH_MAX_MM,
+    TOP_WIDTH_MIN_MM,
+    WALL_WIDTH_DEFAULT_MM,
+    WALL_WIDTH_MAX_MM,
+    WALL_WIDTH_MIN_MM,
 )
 
 PIECE_LABELS = {"stringer": "Stringer", "a": "Side A", "b": "Side B"}
 CUTLAP_LABELS = {"a": "Cutlap A", "b": "Cutlap B"}
+
+GROUP_HINT = "Select a piece from the board core to enable actions."
+STRINGER_HINT = (
+    "No actions available for this piece. Select a piece from the board core."
+)
+CUTLAP_HINT = (
+    "No actions available for cutlap pieces. Select a piece from the board core."
+)
 
 
 class AccordionSection(QWidget):
@@ -131,9 +151,112 @@ class PiecesPanel(QWidget):
 
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
+        self.tree.currentItemChanged.connect(
+            lambda current, _previous: self._update_actions(current)
+        )
         layout.addWidget(self.tree)
 
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        self.piece_actions = QGroupBox("Piece actions")
+        actions_layout = QVBoxLayout(self.piece_actions)
+        self.wall_width_slider = self._add_slider(
+            actions_layout,
+            "Wall width",
+            WALL_WIDTH_MIN_MM,
+            WALL_WIDTH_MAX_MM,
+            WALL_WIDTH_DEFAULT_MM,
+            unit=" mm",
+            decimals=1,
+        )
+        self.top_width_slider = self._add_slider(
+            actions_layout,
+            "Top width",
+            TOP_WIDTH_MIN_MM,
+            TOP_WIDTH_MAX_MM,
+            TOP_WIDTH_DEFAULT_MM,
+            unit=" mm",
+            decimals=1,
+        )
+        self.bottom_width_slider = self._add_slider(
+            actions_layout,
+            "Bottom width",
+            BOTTOM_WIDTH_MIN_MM,
+            BOTTOM_WIDTH_MAX_MM,
+            BOTTOM_WIDTH_DEFAULT_MM,
+            unit=" mm",
+            decimals=1,
+        )
+        self.hole_radius_slider = self._add_slider(
+            actions_layout,
+            "Hole radius",
+            HOLE_RADIUS_MIN_PCT,
+            HOLE_RADIUS_MAX_PCT,
+            HOLE_RADIUS_DEFAULT_PCT,
+            unit=" %",
+        )
+        self.apply_button = QPushButton("Apply")
+        actions_layout.addWidget(self.apply_button)
+        layout.addWidget(self.piece_actions)
+
         self.reset()
+        self._update_actions(None)
+
+    def _add_slider(
+        self, layout, title, minimum, maximum, initial, unit="", decimals=0
+    ):
+        factor = 10**decimals
+        label = QLabel()
+        layout.addWidget(label)
+
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(round(minimum * factor), round(maximum * factor))
+        slider.setValue(round(initial * factor))
+
+        def refresh(raw):
+            value = raw / factor
+            shown = f"{value:.{decimals}f}" if decimals else f"{int(value)}"
+            label.setText(f"{title}: {shown}{unit}")
+
+        slider.valueChanged.connect(refresh)
+        refresh(slider.value())
+        layout.addWidget(slider)
+
+        return slider
+
+    @staticmethod
+    def _classify(key):
+        if not key:
+            return "none"
+        if key == ("all",):
+            return "group"
+        if key == ("stringer",):
+            return "stringer"
+        if len(key) == 1:
+            return "group"
+        if key[1] == "cutlap":
+            return "cutlap_piece" if len(key) == 3 else "group"
+        return "core"
+
+    def _update_actions(self, item):
+        key = item.data(0, Qt.UserRole) if item is not None else None
+        category = self._classify(key)
+
+        if category == "core":
+            self.status_label.setVisible(False)
+            self.piece_actions.setVisible(True)
+            return
+
+        self.piece_actions.setVisible(False)
+        message = {
+            "group": GROUP_HINT,
+            "stringer": STRINGER_HINT,
+            "cutlap_piece": CUTLAP_HINT,
+        }.get(category, "")
+        self.status_label.setText(message)
+        self.status_label.setVisible(bool(message))
 
     def reset(self):
         self.tree.clear()

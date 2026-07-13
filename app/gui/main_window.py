@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.hollow import hollow_piece
 from app.core.mesh_ops import compute_object_stats, load_stl, split_board
 from app.gui.console import LogConsole
 from app.gui.panels import (
@@ -67,6 +68,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 800)
         self.mesh = None
         self.pieces = {}
+        self.original_pieces = {}
+        self.cut_outlines = []
+        self.selected_piece = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -149,6 +153,7 @@ class MainWindow(QMainWindow):
         self.pieces_panel.tree.currentItemChanged.connect(
             self.on_piece_selection_changed
         )
+        self.pieces_panel.apply_button.clicked.connect(self.on_apply_hollow)
 
         self.parametrization_section = AccordionSection(
             "Splitter parametrization", self.parametrization_panel
@@ -209,6 +214,7 @@ class MainWindow(QMainWindow):
         self.file_path_label.setToolTip(path)
 
         self.pieces = {}
+        self.original_pieces = {}
         self.pieces_panel.reset()
         self.pieces_section.set_enabled(False)
 
@@ -278,6 +284,8 @@ class MainWindow(QMainWindow):
             self.unsetCursor()
 
         self.pieces = pieces
+        self.original_pieces = dict(pieces)
+        self.cut_outlines = cut_outlines
 
         self.pieces_panel.populate(pieces)
         self.pieces_section.set_enabled(True)
@@ -290,8 +298,49 @@ class MainWindow(QMainWindow):
 
     def on_piece_selection_changed(self, current, _previous):
         if current is None:
+            self.selected_piece = None
             return
 
         selection = current.data(0, Qt.UserRole)
+        self.selected_piece = selection
         logging.info(f"Showing: {current.text(0)}")
         self.viewer.set_piece_selection(selection)
+
+    def on_apply_hollow(self):
+        key = self.selected_piece
+        if key is None or len(key) != 2 or key[1] == "cutlap":
+            logging.warning("Select a core piece before applying")
+            return
+
+        mesh = self.original_pieces.get(key)
+        if mesh is None:
+            return
+
+        panel = self.pieces_panel
+        wall_mm = panel.wall_width_slider.value() / 10
+        top_mm = panel.top_width_slider.value() / 10
+        bottom_mm = panel.bottom_width_slider.value() / 10
+        hole_pct = panel.hole_radius_slider.value()
+
+        logging.info(
+            f"Hollowing {key}: wall={wall_mm} mm, top={top_mm} mm, "
+            f"bottom={bottom_mm} mm, hole={hole_pct}%"
+        )
+        self.setCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            hollowed = hollow_piece(mesh, wall_mm, top_mm, bottom_mm, hole_pct)
+        except Exception as exc:
+            logging.error(f"Could not hollow piece {key}: {exc}")
+            return
+        finally:
+            self.unsetCursor()
+
+        self.pieces[key] = hollowed
+        self.viewer.show_pieces(
+            self.pieces,
+            cut_outlines=self.cut_outlines,
+            original_mesh=self.mesh,
+            selection=key,
+        )
+        logging.info(f"Hollow applied to {key}")
