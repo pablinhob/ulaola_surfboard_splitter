@@ -211,6 +211,18 @@ class PiecesPanel(QWidget):
             slider.setEnabled(False)
             slider.value_label.setEnabled(False)
 
+        # Any change to the hollow parameters invalidates the current preview,
+        # so the export must be re-generated from a fresh preview.
+        for slider in (
+            self.wall_width_slider,
+            self.top_width_slider,
+            self.bottom_width_slider,
+            self.hole_radius_slider,
+        ):
+            slider.valueChanged.connect(
+                lambda _value: self.export_button.setEnabled(False)
+            )
+
         self.reset()
         self._update_actions(None)
 

@@ -23,6 +23,7 @@ from app.core.mesh_ops import (
     split_board,
 )
 from app.gui.console import LogConsole
+from app.gui.export_window import ExportWindow
 from app.gui.panels import (
     AccordionSection,
     ObjectStatsPanel,
@@ -165,6 +166,7 @@ class MainWindow(QMainWindow):
             self.on_piece_selection_changed
         )
         self.pieces_panel.apply_button.clicked.connect(self.on_apply_hollow)
+        self.pieces_panel.export_button.clicked.connect(self.on_export_hollow)
 
         self.parametrization_section = AccordionSection(
             " 1 - Split model into polygons", self.parametrization_panel
@@ -359,3 +361,24 @@ class MainWindow(QMainWindow):
         )
         self.pieces_panel.export_button.setEnabled(True)
         logging.info(f"Hollow applied to {key}")
+
+    def on_export_hollow(self):
+        if not self.original_pieces:
+            logging.warning("Nothing to export, run a preview first")
+            return
+
+        panel = self.pieces_panel
+        hollow_params = (
+            panel.wall_width_slider.value() / 10,
+            panel.top_width_slider.value() / 10,
+            panel.bottom_width_slider.value() / 10,
+            panel.hole_radius_slider.value(),
+        )
+        thickness_axis = detect_thickness_axis(self.mesh)
+
+        logging.info("Exporting hollowing for all pieces...")
+        self.export_window = ExportWindow(
+            self.original_pieces, hollow_params, thickness_axis, self
+        )
+        self.export_window.show()
+        self.export_window.process_and_show()
