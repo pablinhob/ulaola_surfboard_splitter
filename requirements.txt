@@ -10,6 +10,7 @@ docstring_parser==0.18.0
 fonttools==4.63.0
 idna==3.18
 kiwisolver==1.5.0
+lxml==6.1.1
 manifold3d==3.5.2
 mapbox_earcut==2.0.0
 markdown-it-py==4.2.0

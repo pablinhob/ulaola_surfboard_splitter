@@ -267,6 +267,10 @@ class PiecesPanel(QWidget):
         key = item.data(0, Qt.UserRole) if item is not None else None
         category = self._classify(key)
 
+        # Selecting a different piece invalidates the current preview, so the
+        # export must be re-generated from a fresh preview.
+        self.export_button.setEnabled(False)
+
         if category == "core":
             self.status_label.setVisible(False)
             self.piece_actions.setVisible(True)
