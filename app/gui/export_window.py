@@ -73,6 +73,8 @@ class ExportWindow(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("Export hollowing")
         self.resize(1000, 700)
+        self.setWindowFlag(Qt.WindowMinimizeButtonHint, False)
+        self.setWindowFlag(Qt.WindowMaximizeButtonHint, False)
 
         self._pieces = pieces
         self._hollow_params = hollow_params
@@ -110,6 +112,12 @@ class ExportWindow(QMainWindow):
     def _set_export_enabled(self, enabled):
         self.format_combo.setEnabled(enabled)
         self.export_button.setEnabled(enabled)
+
+    def closeEvent(self, event):
+        # The VTK render window must be finalised explicitly; otherwise closing
+        # the window crashes when VTK tears itself down during destruction.
+        self.viewer.close()
+        super().closeEvent(event)
 
     def process_and_show(self):
         """Hollow every eligible piece with the preview parameters, then display."""
