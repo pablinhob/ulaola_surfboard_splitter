@@ -84,26 +84,26 @@ class MeshViewer(QtInteractor):
         self._piece_bounds = {}
         self._outline_actors = []
         self._ghost_actor = None
-        self._marker_actor = None
+        self._marker_actors = []
 
     def show_mesh(self, pv_mesh, color=BOARD_COLOR):
         self.clear()
         self.set_background(VIEWER_BACKGROUND_COLOR)
         self._piece_actors = {}
-        self._marker_actor = None
+        self._marker_actors = []
         self.add_mesh(pv_mesh, color=color)
         self._add_corner_brackets(pv_mesh.bounds)
         self.reset_camera()
 
-    def set_marker_cylinder(self, center, direction, height, radius, color="green"):
-        """Draw (or replace) a single cylinder marker in the scene."""
-        if self._marker_actor is not None:
-            self.remove_actor(self._marker_actor)
-            self._marker_actor = None
-        cylinder = pv.Cylinder(
-            center=center, direction=direction, radius=radius, height=height
-        )
-        self._marker_actor = self.add_mesh(cylinder, color=color)
+    def set_plug_markers(self, solids, color="green"):
+        """Draw (replacing any previous) a set of plug marker solids."""
+        for actor in self._marker_actors:
+            self.remove_actor(actor)
+        self._marker_actors = []
+        for solid in solids:
+            self._marker_actors.append(
+                self.add_mesh(_trimesh_to_pyvista(solid), color=color)
+            )
 
     def show_trimesh(self, mesh, color=BOARD_COLOR):
         self.show_mesh(_trimesh_to_pyvista(mesh), color=color)
@@ -117,7 +117,7 @@ class MeshViewer(QtInteractor):
         self._piece_actors = {}
         self._piece_edge_actors = {}
         self._piece_bounds = {}
-        self._marker_actor = None
+        self._marker_actors = []
         combined_bounds = None
         for key, segment_mesh in pieces.items():
             if key[0] == "stringer":

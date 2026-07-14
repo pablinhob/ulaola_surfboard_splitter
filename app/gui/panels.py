@@ -35,6 +35,9 @@ from app.config import (
     FIN_SINGLE_TAIL_DISTANCE_DEFAULT_MM,
     FIN_SINGLE_TAIL_DISTANCE_MAX_MM,
     FIN_SINGLE_TAIL_DISTANCE_MIN_MM,
+    FIN_TWIN_ANGLE_DEFAULT_DEG,
+    FIN_TWIN_ANGLE_MAX_DEG,
+    FIN_TWIN_ANGLE_MIN_DEG,
     FIN_TWIN_CENTER_DISTANCE_DEFAULT_MM,
     FIN_TWIN_CENTER_DISTANCE_MAX_MM,
     FIN_TWIN_CENTER_DISTANCE_MIN_MM,
@@ -233,25 +236,36 @@ class FinPlugPanel(QGroupBox):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
 
-        row = QHBoxLayout()
+        top_row = QHBoxLayout()
         self.twin_tail_distance_spin = self._add_field(
-            row,
+            top_row,
             "Tail distance",
             FIN_TWIN_TAIL_DISTANCE_MIN_MM,
             FIN_TWIN_TAIL_DISTANCE_MAX_MM,
             FIN_TWIN_TAIL_DISTANCE_DEFAULT_MM,
         )
         self.twin_center_distance_spin = self._add_field(
-            row,
+            top_row,
             "Center distance",
             FIN_TWIN_CENTER_DISTANCE_MIN_MM,
             FIN_TWIN_CENTER_DISTANCE_MAX_MM,
             FIN_TWIN_CENTER_DISTANCE_DEFAULT_MM,
         )
-        page_layout.addLayout(row)
+        page_layout.addLayout(top_row)
+
+        bottom_row = QHBoxLayout()
+        self.twin_angle_spin = self._add_field(
+            bottom_row,
+            "Angle",
+            FIN_TWIN_ANGLE_MIN_DEG,
+            FIN_TWIN_ANGLE_MAX_DEG,
+            FIN_TWIN_ANGLE_DEFAULT_DEG,
+            unit="°",
+        )
+        page_layout.addLayout(bottom_row)
         return page
 
-    def _add_field(self, layout, title, minimum, maximum, initial):
+    def _add_field(self, layout, title, minimum, maximum, initial, unit="mm"):
         layout.addWidget(QLabel(title))
         spin = QSpinBox()
         spin.setRange(minimum, maximum)
@@ -259,7 +273,7 @@ class FinPlugPanel(QGroupBox):
         # Room for up to 4 digits (plus a sign / spin arrows).
         spin.setMinimumWidth(70)
         layout.addWidget(spin)
-        layout.addWidget(QLabel("mm"))
+        layout.addWidget(QLabel(unit))
         return spin
 
 

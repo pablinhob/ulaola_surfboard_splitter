@@ -22,7 +22,11 @@ from app.core.mesh_ops import (
     load_stl,
     split_board,
 )
-from app.core.plugs import leash_plug_cylinder
+from app.core.plugs import (
+    leash_plug_solid,
+    single_fin_solids,
+    twin_fin_solids,
+)
 from app.gui.console import LogConsole
 from app.gui.export_window import ExportWindow
 from app.gui.panels import (
@@ -112,19 +116,38 @@ class MainWindow(QMainWindow):
         button.clicked.connect(slot)
         return button
 
-    def _draw_leash_marker(self):
-        """Show the green leash-plug marker for the current parameters."""
+    def _draw_plug_markers(self):
+        """Show the green plug markers (leash + fins) for the current parameters."""
         if self.mesh is None:
             return
 
-        panel = self.leash_plug_panel
-        center, direction, height, radius = leash_plug_cylinder(
-            self.mesh,
-            panel.tail_distance_spin.value(),
-            panel.center_spin.value(),
-            panel.diameter_spin.value(),
-        )
-        self.viewer.set_marker_cylinder(center, direction, height=height, radius=radius)
+        leash = self.leash_plug_panel
+        solids = [
+            leash_plug_solid(
+                self.mesh,
+                leash.tail_distance_spin.value(),
+                leash.center_spin.value(),
+                leash.diameter_spin.value(),
+            )
+        ]
+
+        fin = self.fin_plug_panel
+        if fin.type_combo.currentIndex() == 0:  # Single Fin
+            solids += single_fin_solids(
+                self.mesh,
+                fin.single_box_long_spin.value(),
+                fin.single_box_width_spin.value(),
+                fin.single_tail_distance_spin.value(),
+            )
+        else:  # Twin Fin
+            solids += twin_fin_solids(
+                self.mesh,
+                fin.twin_tail_distance_spin.value(),
+                fin.twin_center_distance_spin.value(),
+                fin.twin_angle_spin.value(),
+            )
+
+        self.viewer.set_plug_markers(solids)
 
     def _link_exclusive(self, sections):
         """Expanding one accordion section collapses the others."""
@@ -196,6 +219,7 @@ class MainWindow(QMainWindow):
 
         self.plugs_setup_panel = PlugsSetupPanel()
         self.leash_plug_panel = self.plugs_setup_panel.leash_plug_panel
+        self.fin_plug_panel = self.plugs_setup_panel.fin_plug_panel
         self.plugs_setup_panel.continue_button.clicked.connect(
             lambda: self.parametrization_section.set_expanded(True)
         )
@@ -203,8 +227,17 @@ class MainWindow(QMainWindow):
             self.leash_plug_panel.tail_distance_spin,
             self.leash_plug_panel.diameter_spin,
             self.leash_plug_panel.center_spin,
+            self.fin_plug_panel.single_box_long_spin,
+            self.fin_plug_panel.single_box_width_spin,
+            self.fin_plug_panel.single_tail_distance_spin,
+            self.fin_plug_panel.twin_tail_distance_spin,
+            self.fin_plug_panel.twin_center_distance_spin,
+            self.fin_plug_panel.twin_angle_spin,
         ):
-            spin.valueChanged.connect(lambda _value: self._draw_leash_marker())
+            spin.valueChanged.connect(lambda _value: self._draw_plug_markers())
+        self.fin_plug_panel.type_combo.currentIndexChanged.connect(
+            lambda _index: self._draw_plug_markers()
+        )
 
         self.plugs_section = AccordionSection(
             " 1 - Plugs setup", self.plugs_setup_panel
@@ -290,7 +323,7 @@ class MainWindow(QMainWindow):
         self.parametrization_section.set_enabled(True)
         self.plugs_section.set_expanded(True)
         self.viewer.show_trimesh(mesh)
-        self._draw_leash_marker()
+        self._draw_plug_markers()
         logging.info(
             f"STL loaded successfully: {len(mesh.vertices)} vertices, "
             f"{len(mesh.faces)} faces"
