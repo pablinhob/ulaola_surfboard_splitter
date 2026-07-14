@@ -3,6 +3,7 @@ import logging
 import trimesh
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from trimesh.visual.material import SimpleMaterial
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -180,7 +181,13 @@ class ExportWindow(QMainWindow):
         for key, mesh in self._final_pieces.items():
             piece = mesh.copy()
             if fmt["colors"]:
-                piece.visual.face_colors = _piece_color(key)
+                # Colour via a named material (writes a .mtl) rather than
+                # per-vertex colours: the latter is a non-standard OBJ extension
+                # (6 numbers per "v" line) that some CAD importers reject
+                # (e.g. FreeCAD's Arch OBJ importer: "Expected sequence of size 3").
+                piece.visual = trimesh.visual.TextureVisuals(
+                    material=SimpleMaterial(diffuse=_piece_color(key))
+                )
             name = _piece_name(key)
             scene.add_geometry(piece, node_name=name, geom_name=name)
 
