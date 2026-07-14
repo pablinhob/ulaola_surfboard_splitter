@@ -25,6 +25,18 @@ from app.config import (
     HOLE_RADIUS_DEFAULT_PCT,
     HOLE_RADIUS_MAX_PCT,
     HOLE_RADIUS_MIN_PCT,
+    LEASH_PLUG_CENTER_DEFAULT_MM,
+    LEASH_PLUG_CENTER_MAX_MM,
+    LEASH_PLUG_CENTER_MIN_MM,
+    LEASH_PLUG_DEPTH_DEFAULT_MM,
+    LEASH_PLUG_DEPTH_MAX_MM,
+    LEASH_PLUG_DEPTH_MIN_MM,
+    LEASH_PLUG_DIAMETER_DEFAULT_MM,
+    LEASH_PLUG_DIAMETER_MAX_MM,
+    LEASH_PLUG_DIAMETER_MIN_MM,
+    LEASH_PLUG_POSITION_DEFAULT_MM,
+    LEASH_PLUG_POSITION_MAX_MM,
+    LEASH_PLUG_POSITION_MIN_MM,
     PIECE_RADIUS_DEFAULT_MM,
     PIECE_RADIUS_MAX_MM,
     PIECE_RADIUS_MIN_MM,
@@ -88,6 +100,70 @@ class AccordionSection(QWidget):
         self.toggle_button.setEnabled(enabled)
         if not enabled:
             self.set_expanded(False)
+
+
+class LeashPlugPanel(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__("Leash plug box", parent)
+        layout = QVBoxLayout(self)
+
+        top_row = QHBoxLayout()
+        self.diameter_spin = self._add_field(
+            top_row,
+            "Diameter",
+            LEASH_PLUG_DIAMETER_MIN_MM,
+            LEASH_PLUG_DIAMETER_MAX_MM,
+            LEASH_PLUG_DIAMETER_DEFAULT_MM,
+        )
+        self.depth_spin = self._add_field(
+            top_row,
+            "Deep",
+            LEASH_PLUG_DEPTH_MIN_MM,
+            LEASH_PLUG_DEPTH_MAX_MM,
+            LEASH_PLUG_DEPTH_DEFAULT_MM,
+        )
+        layout.addLayout(top_row)
+
+        bottom_row = QHBoxLayout()
+        self.position_spin = self._add_field(
+            bottom_row,
+            "Position",
+            LEASH_PLUG_POSITION_MIN_MM,
+            LEASH_PLUG_POSITION_MAX_MM,
+            LEASH_PLUG_POSITION_DEFAULT_MM,
+        )
+        self.center_spin = self._add_field(
+            bottom_row,
+            "Center",
+            LEASH_PLUG_CENTER_MIN_MM,
+            LEASH_PLUG_CENTER_MAX_MM,
+            LEASH_PLUG_CENTER_DEFAULT_MM,
+        )
+        layout.addLayout(bottom_row)
+
+    def _add_field(self, layout, title, minimum, maximum, initial):
+        layout.addWidget(QLabel(title))
+        spin = QSpinBox()
+        spin.setRange(minimum, maximum)
+        spin.setValue(initial)
+        # Room for up to 4 digits (plus a sign / spin arrows).
+        spin.setMinimumWidth(70)
+        layout.addWidget(spin)
+        layout.addWidget(QLabel("mm"))
+        return spin
+
+
+class PlugsSetupPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        self.leash_plug_panel = LeashPlugPanel()
+        layout.addWidget(self.leash_plug_panel)
+
+        self.continue_button = QPushButton("Continue")
+        layout.addWidget(self.continue_button)
 
 
 class SplitterParametrizationPanel(QWidget):

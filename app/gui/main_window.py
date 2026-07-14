@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
@@ -28,6 +29,7 @@ from app.gui.panels import (
     AccordionSection,
     ObjectStatsPanel,
     PiecesPanel,
+    PlugsSetupPanel,
     SplitterParametrizationPanel,
 )
 from app.gui.viewer import MeshViewer
@@ -110,6 +112,63 @@ class MainWindow(QMainWindow):
         button.clicked.connect(slot)
         return button
 
+    def _draw_leash_marker(self):
+        """Green vertical cylinder marking the leash-plug position on the board.
+
+        Placed at ``position`` mm from the tail (the length-axis min end), centred
+        across the width, ~200 mm long and ``diameter`` mm wide, straddling the
+        board's top surface so it visibly intersects the figure.
+        """
+        if self.mesh is None:
+            return
+
+        min_bounds, max_bounds = self.mesh.bounds
+        sizes = max_bounds - min_bounds
+        length_axis = int(np.argmax(sizes))
+        thickness_axis = int(np.argmin(sizes))
+        width_axis = 3 - length_axis - thickness_axis
+
+        position = self.leash_plug_panel.position_spin.value()
+        center_offset = self.leash_plug_panel.center_spin.value()
+        length_pos = min_bounds[length_axis] + position
+        # Center offset shifts the marker sideways from the width centreline:
+        # positive to one side, negative to the other.
+        width_pos = (
+            min_bounds[width_axis] + max_bounds[width_axis]
+        ) / 2 + center_offset
+
+        # Find the board's top surface at that spot to centre the marker on it.
+        origin = np.zeros(3)
+        origin[length_axis] = length_pos
+        origin[width_axis] = width_pos
+        origin[thickness_axis] = min_bounds[thickness_axis] - 1.0
+        direction = np.zeros(3)
+        direction[thickness_axis] = 1.0
+        hits = self.mesh.ray.intersects_location([origin], [direction])[0]
+        if len(hits):
+            surface = hits[:, thickness_axis].max()
+        else:
+            surface = (min_bounds[thickness_axis] + max_bounds[thickness_axis]) / 2
+
+        diameter = self.leash_plug_panel.diameter_spin.value()
+        center = np.zeros(3)
+        center[length_axis] = length_pos
+        center[width_axis] = width_pos
+        center[thickness_axis] = surface
+        self.viewer.set_marker_cylinder(
+            center, direction, height=200.0, radius=diameter / 2
+        )
+
+    def _link_exclusive(self, sections):
+        """Expanding one accordion section collapses the others."""
+        for section in sections:
+            others = [s for s in sections if s is not section]
+            section.toggle_button.toggled.connect(
+                lambda checked, others=others: (
+                    [other.set_expanded(False) for other in others] if checked else None
+                )
+            )
+
     def _build_left_panel(self):
         left_panel = QWidget()
         left_panel.setFixedWidth(440)
@@ -168,20 +227,37 @@ class MainWindow(QMainWindow):
         self.pieces_panel.apply_button.clicked.connect(self.on_apply_hollow)
         self.pieces_panel.export_button.clicked.connect(self.on_export_hollow)
 
+        self.plugs_setup_panel = PlugsSetupPanel()
+        self.leash_plug_panel = self.plugs_setup_panel.leash_plug_panel
+        self.plugs_setup_panel.continue_button.clicked.connect(
+            lambda: self.parametrization_section.set_expanded(True)
+        )
+        for spin in (
+            self.leash_plug_panel.position_spin,
+            self.leash_plug_panel.diameter_spin,
+            self.leash_plug_panel.center_spin,
+        ):
+            spin.valueChanged.connect(lambda _value: self._draw_leash_marker())
+
+        self.plugs_section = AccordionSection(
+            " 1 - Plugs setup", self.plugs_setup_panel
+        )
         self.parametrization_section = AccordionSection(
-            " 1 - Split model into polygons", self.parametrization_panel
+            " 2 - Split model into polygons", self.parametrization_panel
         )
-        self.pieces_section = AccordionSection(" 2 - Process polygons", self.pieces_panel)
-        self.parametrization_section.toggle_button.toggled.connect(
-            lambda checked: self.pieces_section.set_expanded(False) if checked else None
+        self.pieces_section = AccordionSection(
+            " 3 - Process polygons", self.pieces_panel
         )
-        self.pieces_section.toggle_button.toggled.connect(
-            lambda checked: (
-                self.parametrization_section.set_expanded(False) if checked else None
-            )
+
+        self._link_exclusive(
+            [self.plugs_section, self.parametrization_section, self.pieces_section]
         )
+
+        self.plugs_section.set_enabled(False)
         self.parametrization_section.set_enabled(False)
         self.pieces_section.set_enabled(False)
+
+        layout.addWidget(self.plugs_section)
         layout.addWidget(self.parametrization_section)
         layout.addWidget(self.pieces_section)
 
@@ -237,14 +313,17 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             logging.error(f"Could not parse STL file '{path}': {exc}")
             self.mesh = None
+            self.plugs_section.set_enabled(False)
             self.parametrization_section.set_enabled(False)
             self.stats_panel.reset()
             return
 
         self.mesh = mesh
+        self.plugs_section.set_enabled(True)
         self.parametrization_section.set_enabled(True)
-        self.parametrization_section.set_expanded(True)
+        self.plugs_section.set_expanded(True)
         self.viewer.show_trimesh(mesh)
+        self._draw_leash_marker()
         logging.info(
             f"STL loaded successfully: {len(mesh.vertices)} vertices, "
             f"{len(mesh.faces)} faces"
