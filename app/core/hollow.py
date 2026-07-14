@@ -1,13 +1,17 @@
 import numpy as np
 import trimesh
-from shapely.geometry import Point
-from trimesh.intersections import slice_mesh_plane
+from shapely.geometry import Point, Polygon
+from shapely.ops import unary_union
 
 FACE_HOLE_SECTIONS = 48
 DRILL_OUTER_MARGIN_MM = 1.0
 DRILL_INNER_MARGIN_MM = 5.0
 COLLINEAR_TOLERANCE_MM = 0.1
 HEIGHT_SAMPLE_INSET_MM = 1.0
+# The footprint comes from unioning the piece's triangles, so its boundary has
+# many tiny/near-collinear segments; simplifying it keeps the extruded cavity a
+# clean watertight volume (extrude_polygon chokes on the jagged raw boundary).
+FOOTPRINT_SIMPLIFY_MM = 0.1
 
 
 def hollow_piece(
@@ -46,11 +50,8 @@ def hollow_piece(
 
     planar, to_3d = section.to_planar()
 
-    tools = []
-
-    cavity = _build_cavity(
-        planar,
-        to_3d,
+    tools = _build_cavity(
+        mesh,
         normal,
         thickness_axis,
         wall_width_mm,
@@ -59,8 +60,6 @@ def hollow_piece(
         top_width_mm,
         bottom_width_mm,
     )
-    if cavity is not None:
-        tools.append(cavity)
 
     if hole_radius_pct > 0:
         tools.extend(
@@ -82,9 +81,24 @@ def hollow_piece(
     return trimesh.boolean.difference([mesh, *tools])
 
 
+def _piece_footprint(mesh, thickness_axis):
+    """The piece's shadow along the thickness axis (union of all its sections).
+
+    Using the full footprint - rather than a single mid-height cross-section -
+    means the cavity covers pieces whose faces tilt or curve across the
+    thickness (rockered nose/tail, rounded rails). A mid-height slice only
+    captures a diagonal sliver of such pieces, which left large solid bands.
+    """
+    in_axes = [a for a in range(3) if a != thickness_axis]
+    triangles = mesh.triangles[:, :, in_axes]
+    polygons = [Polygon(tri) for tri in triangles]
+    footprint = unary_union([p for p in polygons if p.is_valid and p.area > 0])
+    # buffer(0) heals any slivers left by the union into a clean polygon.
+    return footprint.buffer(0)
+
+
 def _build_cavity(
-    planar,
-    to_3d,
+    mesh,
     normal,
     thickness_axis,
     wall_width_mm,
@@ -93,38 +107,40 @@ def _build_cavity(
     top_width_mm,
     bottom_width_mm,
 ):
+    """Build the cavity as a single prism from the piece's footprint.
+
+    The footprint is inset by ``wall_width_mm`` and extruded through the
+    hollowable thickness range. Returns a list of solid meshes (the difference
+    tools), possibly empty.
+    """
     cavity_bottom = z_min + bottom_width_mm
     cavity_top = z_max - top_width_mm
-    if cavity_top - cavity_bottom <= 0:
-        return None
+    span = cavity_top - cavity_bottom
+    if span <= 0:
+        return []
 
-    tall = (z_max - z_min) + 4.0
-    lift = np.eye(4)
-    lift[2, 3] = -tall / 2
+    footprint = _piece_footprint(mesh, thickness_axis)
+    if footprint.is_empty:
+        return []
+    inner = footprint.buffer(-wall_width_mm)
+    if inner.is_empty:
+        return []
 
+    in_axes = [a for a in range(3) if a != thickness_axis]
     solids = []
-    for polygon in planar.polygons_full:
-        inner = polygon.buffer(-wall_width_mm)
-        if inner.is_empty:
+    for geometry in getattr(inner, "geoms", [inner]):
+        geometry = geometry.simplify(FOOTPRINT_SIMPLIFY_MM)
+        if geometry.is_empty:
             continue
-        for geometry in getattr(inner, "geoms", [inner]):
-            solid = trimesh.creation.extrude_polygon(geometry, height=tall)
-            solid.apply_transform(lift)
-            solid.apply_transform(to_3d)
-            solids.append(solid)
+        prism = trimesh.creation.extrude_polygon(geometry, height=span)
+        remapped = np.zeros_like(prism.vertices)
+        remapped[:, in_axes[0]] = prism.vertices[:, 0]
+        remapped[:, in_axes[1]] = prism.vertices[:, 1]
+        remapped[:, thickness_axis] = prism.vertices[:, 2] + cavity_bottom
+        prism.vertices = remapped
+        solids.append(prism)
 
-    if not solids:
-        return None
-
-    cavity = trimesh.util.concatenate(solids)
-
-    lo = np.zeros(3)
-    lo[thickness_axis] = cavity_bottom
-    hi = np.zeros(3)
-    hi[thickness_axis] = cavity_top
-    cavity = slice_mesh_plane(cavity, normal, lo, cap=True)
-    cavity = slice_mesh_plane(cavity, -normal, hi, cap=True)
-    return cavity
+    return solids
 
 
 def _build_face_holes(
