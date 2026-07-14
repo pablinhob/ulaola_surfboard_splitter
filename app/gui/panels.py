@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QStackedWidget,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -22,6 +23,24 @@ from app.config import (
     CUTLAP_WIDTH_DEFAULT_MM,
     CUTLAP_WIDTH_MAX_MM,
     CUTLAP_WIDTH_MIN_MM,
+    FIN_SINGLE_BOX_DEPTH_DEFAULT_MM,
+    FIN_SINGLE_BOX_DEPTH_MAX_MM,
+    FIN_SINGLE_BOX_DEPTH_MIN_MM,
+    FIN_SINGLE_BOX_LONG_DEFAULT_MM,
+    FIN_SINGLE_BOX_LONG_MAX_MM,
+    FIN_SINGLE_BOX_LONG_MIN_MM,
+    FIN_SINGLE_BOX_WIDTH_DEFAULT_MM,
+    FIN_SINGLE_BOX_WIDTH_MAX_MM,
+    FIN_SINGLE_BOX_WIDTH_MIN_MM,
+    FIN_SINGLE_TAIL_DISTANCE_DEFAULT_MM,
+    FIN_SINGLE_TAIL_DISTANCE_MAX_MM,
+    FIN_SINGLE_TAIL_DISTANCE_MIN_MM,
+    FIN_TWIN_CENTER_DISTANCE_DEFAULT_MM,
+    FIN_TWIN_CENTER_DISTANCE_MAX_MM,
+    FIN_TWIN_CENTER_DISTANCE_MIN_MM,
+    FIN_TWIN_TAIL_DISTANCE_DEFAULT_MM,
+    FIN_TWIN_TAIL_DISTANCE_MAX_MM,
+    FIN_TWIN_TAIL_DISTANCE_MIN_MM,
     HOLE_RADIUS_DEFAULT_PCT,
     HOLE_RADIUS_MAX_PCT,
     HOLE_RADIUS_MIN_PCT,
@@ -34,9 +53,9 @@ from app.config import (
     LEASH_PLUG_DIAMETER_DEFAULT_MM,
     LEASH_PLUG_DIAMETER_MAX_MM,
     LEASH_PLUG_DIAMETER_MIN_MM,
-    LEASH_PLUG_POSITION_DEFAULT_MM,
-    LEASH_PLUG_POSITION_MAX_MM,
-    LEASH_PLUG_POSITION_MIN_MM,
+    LEASH_PLUG_TAIL_DISTANCE_DEFAULT_MM,
+    LEASH_PLUG_TAIL_DISTANCE_MAX_MM,
+    LEASH_PLUG_TAIL_DISTANCE_MIN_MM,
     PIECE_RADIUS_DEFAULT_MM,
     PIECE_RADIUS_MAX_MM,
     PIECE_RADIUS_MIN_MM,
@@ -125,12 +144,12 @@ class LeashPlugPanel(QGroupBox):
         layout.addLayout(top_row)
 
         bottom_row = QHBoxLayout()
-        self.position_spin = self._add_field(
+        self.tail_distance_spin = self._add_field(
             bottom_row,
-            "Position",
-            LEASH_PLUG_POSITION_MIN_MM,
-            LEASH_PLUG_POSITION_MAX_MM,
-            LEASH_PLUG_POSITION_DEFAULT_MM,
+            "Tail distance",
+            LEASH_PLUG_TAIL_DISTANCE_MIN_MM,
+            LEASH_PLUG_TAIL_DISTANCE_MAX_MM,
+            LEASH_PLUG_TAIL_DISTANCE_DEFAULT_MM,
         )
         self.center_spin = self._add_field(
             bottom_row,
@@ -153,6 +172,97 @@ class LeashPlugPanel(QGroupBox):
         return spin
 
 
+class FinPlugPanel(QGroupBox):
+    def __init__(self, parent=None):
+        super().__init__("Fin plug configuration", parent)
+        layout = QVBoxLayout(self)
+
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["Single Fin", "Twin Fin"])
+        layout.addWidget(self.type_combo)
+
+        self.stack = QStackedWidget()
+        layout.addWidget(self.stack)
+
+        self.stack.addWidget(self._build_single_page())
+        self.stack.addWidget(self._build_twin_page())
+        self.type_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
+
+    def _build_single_page(self):
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        top_row = QHBoxLayout()
+        self.single_box_long_spin = self._add_field(
+            top_row,
+            "Box long",
+            FIN_SINGLE_BOX_LONG_MIN_MM,
+            FIN_SINGLE_BOX_LONG_MAX_MM,
+            FIN_SINGLE_BOX_LONG_DEFAULT_MM,
+        )
+        self.single_box_width_spin = self._add_field(
+            top_row,
+            "Box width",
+            FIN_SINGLE_BOX_WIDTH_MIN_MM,
+            FIN_SINGLE_BOX_WIDTH_MAX_MM,
+            FIN_SINGLE_BOX_WIDTH_DEFAULT_MM,
+        )
+        page_layout.addLayout(top_row)
+
+        bottom_row = QHBoxLayout()
+        self.single_box_deep_spin = self._add_field(
+            bottom_row,
+            "Box deep",
+            FIN_SINGLE_BOX_DEPTH_MIN_MM,
+            FIN_SINGLE_BOX_DEPTH_MAX_MM,
+            FIN_SINGLE_BOX_DEPTH_DEFAULT_MM,
+        )
+        self.single_tail_distance_spin = self._add_field(
+            bottom_row,
+            "Tail distance",
+            FIN_SINGLE_TAIL_DISTANCE_MIN_MM,
+            FIN_SINGLE_TAIL_DISTANCE_MAX_MM,
+            FIN_SINGLE_TAIL_DISTANCE_DEFAULT_MM,
+        )
+        page_layout.addLayout(bottom_row)
+        return page
+
+    def _build_twin_page(self):
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        row = QHBoxLayout()
+        self.twin_tail_distance_spin = self._add_field(
+            row,
+            "Tail distance",
+            FIN_TWIN_TAIL_DISTANCE_MIN_MM,
+            FIN_TWIN_TAIL_DISTANCE_MAX_MM,
+            FIN_TWIN_TAIL_DISTANCE_DEFAULT_MM,
+        )
+        self.twin_center_distance_spin = self._add_field(
+            row,
+            "Center distance",
+            FIN_TWIN_CENTER_DISTANCE_MIN_MM,
+            FIN_TWIN_CENTER_DISTANCE_MAX_MM,
+            FIN_TWIN_CENTER_DISTANCE_DEFAULT_MM,
+        )
+        page_layout.addLayout(row)
+        return page
+
+    def _add_field(self, layout, title, minimum, maximum, initial):
+        layout.addWidget(QLabel(title))
+        spin = QSpinBox()
+        spin.setRange(minimum, maximum)
+        spin.setValue(initial)
+        # Room for up to 4 digits (plus a sign / spin arrows).
+        spin.setMinimumWidth(70)
+        layout.addWidget(spin)
+        layout.addWidget(QLabel("mm"))
+        return spin
+
+
 class PlugsSetupPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -161,6 +271,9 @@ class PlugsSetupPanel(QWidget):
 
         self.leash_plug_panel = LeashPlugPanel()
         layout.addWidget(self.leash_plug_panel)
+
+        self.fin_plug_panel = FinPlugPanel()
+        layout.addWidget(self.fin_plug_panel)
 
         self.continue_button = QPushButton("Continue")
         layout.addWidget(self.continue_button)

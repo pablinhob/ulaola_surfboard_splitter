@@ -1,6 +1,5 @@
 import logging
 
-import numpy as np
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
@@ -23,6 +22,7 @@ from app.core.mesh_ops import (
     load_stl,
     split_board,
 )
+from app.core.plugs import leash_plug_cylinder
 from app.gui.console import LogConsole
 from app.gui.export_window import ExportWindow
 from app.gui.panels import (
@@ -113,51 +113,18 @@ class MainWindow(QMainWindow):
         return button
 
     def _draw_leash_marker(self):
-        """Green vertical cylinder marking the leash-plug position on the board.
-
-        Placed at ``position`` mm from the tail (the length-axis min end), centred
-        across the width, ~200 mm long and ``diameter`` mm wide, straddling the
-        board's top surface so it visibly intersects the figure.
-        """
+        """Show the green leash-plug marker for the current parameters."""
         if self.mesh is None:
             return
 
-        min_bounds, max_bounds = self.mesh.bounds
-        sizes = max_bounds - min_bounds
-        length_axis = int(np.argmax(sizes))
-        thickness_axis = int(np.argmin(sizes))
-        width_axis = 3 - length_axis - thickness_axis
-
-        position = self.leash_plug_panel.position_spin.value()
-        center_offset = self.leash_plug_panel.center_spin.value()
-        length_pos = min_bounds[length_axis] + position
-        # Center offset shifts the marker sideways from the width centreline:
-        # positive to one side, negative to the other.
-        width_pos = (
-            min_bounds[width_axis] + max_bounds[width_axis]
-        ) / 2 + center_offset
-
-        # Find the board's top surface at that spot to centre the marker on it.
-        origin = np.zeros(3)
-        origin[length_axis] = length_pos
-        origin[width_axis] = width_pos
-        origin[thickness_axis] = min_bounds[thickness_axis] - 1.0
-        direction = np.zeros(3)
-        direction[thickness_axis] = 1.0
-        hits = self.mesh.ray.intersects_location([origin], [direction])[0]
-        if len(hits):
-            surface = hits[:, thickness_axis].max()
-        else:
-            surface = (min_bounds[thickness_axis] + max_bounds[thickness_axis]) / 2
-
-        diameter = self.leash_plug_panel.diameter_spin.value()
-        center = np.zeros(3)
-        center[length_axis] = length_pos
-        center[width_axis] = width_pos
-        center[thickness_axis] = surface
-        self.viewer.set_marker_cylinder(
-            center, direction, height=200.0, radius=diameter / 2
+        panel = self.leash_plug_panel
+        center, direction, height, radius = leash_plug_cylinder(
+            self.mesh,
+            panel.tail_distance_spin.value(),
+            panel.center_spin.value(),
+            panel.diameter_spin.value(),
         )
+        self.viewer.set_marker_cylinder(center, direction, height=height, radius=radius)
 
     def _link_exclusive(self, sections):
         """Expanding one accordion section collapses the others."""
@@ -233,7 +200,7 @@ class MainWindow(QMainWindow):
             lambda: self.parametrization_section.set_expanded(True)
         )
         for spin in (
-            self.leash_plug_panel.position_spin,
+            self.leash_plug_panel.tail_distance_spin,
             self.leash_plug_panel.diameter_spin,
             self.leash_plug_panel.center_spin,
         ):
