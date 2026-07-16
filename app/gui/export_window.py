@@ -47,6 +47,13 @@ def _is_hollowable(key):
     return len(key) == 2 and key[1] != "cutlap"
 
 
+def _bounds_overlap(mesh_a, mesh_b):
+    """Whether two meshes' axis-aligned bounding boxes overlap."""
+    a_min, a_max = mesh_a.bounds
+    b_min, b_max = mesh_b.bounds
+    return bool((a_min <= b_max).all() and (b_min <= a_max).all())
+
+
 def _piece_name(key):
     """Human-readable, unique-ish name used for each object in the export file."""
     if len(key) == 1:
@@ -70,7 +77,9 @@ def _piece_color(key):
 
 
 class ExportWindow(QMainWindow):
-    def __init__(self, pieces, hollow_params, thickness_axis, parent=None):
+    def __init__(
+        self, pieces, hollow_params, thickness_axis, plug_solids=None, parent=None
+    ):
         super().__init__(parent)
         self.setWindowTitle("Export hollowing")
         self.resize(1000, 700)
@@ -80,6 +89,7 @@ class ExportWindow(QMainWindow):
         self._pieces = pieces
         self._hollow_params = hollow_params
         self._thickness_axis = thickness_axis
+        self._plug_solids = plug_solids or []
         self._final_pieces = {}
 
         central = QWidget()
@@ -114,6 +124,29 @@ class ExportWindow(QMainWindow):
         self.format_combo.setEnabled(enabled)
         self.export_button.setEnabled(enabled)
 
+    def _subtract_plugs(self, key, piece):
+        """Subtract every plug cavity that overlaps this (already-cut) piece."""
+        overlapping = [p for p in self._plug_solids if _bounds_overlap(piece, p)]
+        if not overlapping:
+            return piece
+
+        if not piece.is_volume:
+            piece = piece.copy()
+            piece.merge_vertices()
+            piece.fill_holes()
+        if not piece.is_volume:
+            # The source STL isn't watertight, so some raw pieces (e.g. the
+            # stringer) can't be booleaned; leave them uncut rather than crash.
+            logging.warning(f"Piece {key} is not a solid; skipping plug cut")
+            return piece
+
+        for plug in overlapping:
+            try:
+                piece = trimesh.boolean.difference([piece, plug])
+            except Exception as exc:
+                logging.error(f"Could not subtract plug from piece {key}: {exc}")
+        return piece
+
     def closeEvent(self, event):
         # The VTK render window must be finalised explicitly; otherwise closing
         # the window crashes when VTK tears itself down during destruction.
@@ -121,7 +154,7 @@ class ExportWindow(QMainWindow):
         super().closeEvent(event)
 
     def process_and_show(self):
-        """Hollow every eligible piece with the preview parameters, then display."""
+        """Hollow every eligible piece, subtract the plug cavities, then display."""
         wall_mm, top_mm, bottom_mm, hole_pct = self._hollow_params
         total = len(self._pieces)
 
@@ -135,19 +168,17 @@ class ExportWindow(QMainWindow):
 
             if _is_hollowable(key):
                 try:
-                    final_pieces[key] = hollow_piece(
-                        mesh,
-                        wall_mm,
-                        top_mm,
-                        bottom_mm,
-                        hole_pct,
-                        self._thickness_axis,
+                    piece = hollow_piece(
+                        mesh, wall_mm, top_mm, bottom_mm, hole_pct, self._thickness_axis
                     )
                 except Exception as exc:
                     logging.error(f"Could not hollow piece {key}: {exc}")
-                    final_pieces[key] = mesh.copy()
+                    piece = mesh.copy()
             else:
-                final_pieces[key] = mesh.copy()
+                piece = mesh.copy()
+
+            # Carve the plug cavities out of the already-cut, hollowed piece.
+            final_pieces[key] = self._subtract_plugs(key, piece)
 
         self.unsetCursor()
 

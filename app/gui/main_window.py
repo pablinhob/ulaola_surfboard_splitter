@@ -23,6 +23,8 @@ from app.core.mesh_ops import (
     split_board,
 )
 from app.core.plug_position import (
+    MARKER_PROTRUSION_MM,
+    SUBTRACTION_MARGIN_MM,
     leash_plug_markers,
     single_fin_markers,
     twin_fin_markers,
@@ -116,11 +118,8 @@ class MainWindow(QMainWindow):
         button.clicked.connect(slot)
         return button
 
-    def _draw_plug_markers(self):
-        """Show the green plug markers (leash + fins) for the current parameters."""
-        if self.mesh is None:
-            return
-
+    def _collect_plug_solids(self, above_mm):
+        """Leash + fin plug cavities for the current parameters (world space)."""
         leash = self.leash_plug_panel
         solids = leash_plug_markers(
             self.mesh,
@@ -128,6 +127,7 @@ class MainWindow(QMainWindow):
             leash.center_spin.value(),
             leash.diameter_spin.value(),
             leash.depth_spin.value(),
+            above_mm=above_mm,
         )
 
         fin = self.fin_plug_panel
@@ -138,6 +138,7 @@ class MainWindow(QMainWindow):
                 fin.single_box_long_spin.value(),
                 fin.single_box_width_spin.value(),
                 fin.single_box_deep_spin.value(),
+                above_mm=above_mm,
             )
         else:  # Twin Fin
             solids += twin_fin_markers(
@@ -145,9 +146,15 @@ class MainWindow(QMainWindow):
                 fin.twin_tail_distance_spin.value(),
                 fin.twin_center_distance_spin.value(),
                 fin.twin_angle_spin.value(),
+                above_mm=above_mm,
             )
+        return solids
 
-        self.viewer.set_plug_markers(solids)
+    def _draw_plug_markers(self):
+        """Show the green plug markers (leash + fins) for the current parameters."""
+        if self.mesh is None:
+            return
+        self.viewer.set_plug_markers(self._collect_plug_solids(MARKER_PROTRUSION_MM))
 
     def _link_exclusive(self, sections):
         """Expanding one accordion section collapses the others."""
@@ -456,10 +463,11 @@ class MainWindow(QMainWindow):
             panel.hole_radius_slider.value(),
         )
         thickness_axis = detect_thickness_axis(self.mesh)
+        plug_solids = self._collect_plug_solids(SUBTRACTION_MARGIN_MM)
 
         logging.info("Exporting hollowing for all pieces...")
         self.export_window = ExportWindow(
-            self.original_pieces, hollow_params, thickness_axis, self
+            self.original_pieces, hollow_params, thickness_axis, plug_solids, self
         )
         self.export_window.show()
         self.export_window.process_and_show()
