@@ -22,10 +22,10 @@ from app.core.mesh_ops import (
     load_stl,
     split_board,
 )
-from app.core.plugs import (
-    leash_plug_solid,
-    single_fin_solids,
-    twin_fin_solids,
+from app.core.plug_position import (
+    leash_plug_markers,
+    single_fin_markers,
+    twin_fin_markers,
 )
 from app.gui.console import LogConsole
 from app.gui.export_window import ExportWindow
@@ -122,25 +122,25 @@ class MainWindow(QMainWindow):
             return
 
         leash = self.leash_plug_panel
-        solids = [
-            leash_plug_solid(
-                self.mesh,
-                leash.tail_distance_spin.value(),
-                leash.center_spin.value(),
-                leash.diameter_spin.value(),
-            )
-        ]
+        solids = leash_plug_markers(
+            self.mesh,
+            leash.tail_distance_spin.value(),
+            leash.center_spin.value(),
+            leash.diameter_spin.value(),
+            leash.depth_spin.value(),
+        )
 
         fin = self.fin_plug_panel
         if fin.type_combo.currentIndex() == 0:  # Single Fin
-            solids += single_fin_solids(
+            solids += single_fin_markers(
                 self.mesh,
+                fin.single_tail_distance_spin.value(),
                 fin.single_box_long_spin.value(),
                 fin.single_box_width_spin.value(),
-                fin.single_tail_distance_spin.value(),
+                fin.single_box_deep_spin.value(),
             )
         else:  # Twin Fin
-            solids += twin_fin_solids(
+            solids += twin_fin_markers(
                 self.mesh,
                 fin.twin_tail_distance_spin.value(),
                 fin.twin_center_distance_spin.value(),
@@ -227,8 +227,10 @@ class MainWindow(QMainWindow):
             self.leash_plug_panel.tail_distance_spin,
             self.leash_plug_panel.diameter_spin,
             self.leash_plug_panel.center_spin,
+            self.leash_plug_panel.depth_spin,
             self.fin_plug_panel.single_box_long_spin,
             self.fin_plug_panel.single_box_width_spin,
+            self.fin_plug_panel.single_box_deep_spin,
             self.fin_plug_panel.single_tail_distance_spin,
             self.fin_plug_panel.twin_tail_distance_spin,
             self.fin_plug_panel.twin_center_distance_spin,

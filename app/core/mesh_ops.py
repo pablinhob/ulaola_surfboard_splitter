@@ -35,6 +35,95 @@ def detect_thickness_axis(mesh):
     return _detect_axes(mesh)[2]
 
 
+def board_axes(mesh):
+    """(length, width, thickness) axis indices, ordered by extent."""
+    return _detect_axes(mesh)
+
+
+def surface_height(mesh, thickness_axis, point):
+    """Top-surface coordinate along the thickness axis at ``point`` (in-plane)."""
+    origin = np.array(point, dtype=float)
+    origin[thickness_axis] = mesh.bounds[0][thickness_axis] - 1.0
+    direction = np.zeros(3)
+    direction[thickness_axis] = 1.0
+    hits = mesh.ray.intersects_location([origin], [direction])[0]
+    if len(hits):
+        return hits[:, thickness_axis].max()
+    return (mesh.bounds[0][thickness_axis] + mesh.bounds[1][thickness_axis]) / 2
+
+
+def _surface_hit(
+    mesh, length_axis, width_axis, thickness_axis, length_pos, width_pos, bottom
+):
+    """Location where a vertical ray meets the top (or bottom) surface."""
+    origin = np.zeros(3)
+    origin[length_axis] = length_pos
+    origin[width_axis] = width_pos
+    origin[thickness_axis] = mesh.bounds[0][thickness_axis] - 1.0
+    direction = np.zeros(3)
+    direction[thickness_axis] = 1.0
+
+    hits = mesh.ray.intersects_location([origin], [direction])[0]
+    if len(hits) == 0:
+        return None
+    column = hits[:, thickness_axis]
+    index = int(np.argmin(column) if bottom else np.argmax(column))
+    return np.array(hits[index], dtype=float)
+
+
+def surface_frame(
+    mesh, axes, length_pos, width_pos, length_span, width_span, bottom=False
+):
+    """Contact point and averaged outward normal of the top/bottom surface.
+
+    The inclination is estimated from the surface heights at the extremes of a
+    length-wise and a width-wise centre line spanning ``length_span`` x
+    ``width_span`` around ``(length_pos, width_pos)``, so it reflects the overall
+    tilt of the region the plug rests on rather than a single noisy triangle.
+    The normal points outward from the chosen face (down when ``bottom``).
+    """
+    length_axis, width_axis, thickness_axis = axes
+
+    def hit(length, width):
+        return _surface_hit(
+            mesh, length_axis, width_axis, thickness_axis, length, width, bottom
+        )
+
+    center = hit(length_pos, width_pos)
+    if center is None:
+        point = np.zeros(3)
+        point[length_axis] = length_pos
+        point[width_axis] = width_pos
+        point[thickness_axis] = (
+            mesh.bounds[0][thickness_axis] + mesh.bounds[1][thickness_axis]
+        ) / 2
+        normal = np.zeros(3)
+        normal[thickness_axis] = -1.0 if bottom else 1.0
+        return point, normal
+
+    half_length = length_span / 2.0
+    half_width = width_span / 2.0
+    front = hit(length_pos + half_length, width_pos)
+    back = hit(length_pos - half_length, width_pos)
+    right = hit(length_pos, width_pos + half_width)
+    left = hit(length_pos, width_pos - half_width)
+    front = center if front is None else front
+    back = center if back is None else back
+    right = center if right is None else right
+    left = center if left is None else left
+
+    normal = np.cross(front - back, right - left)
+    magnitude = np.linalg.norm(normal)
+    if magnitude < 1e-9:
+        normal = np.zeros(3)
+        normal[thickness_axis] = 1.0
+    else:
+        normal = normal / magnitude
+    if (normal[thickness_axis] > 0) == bottom:
+        normal = -normal
+    return center, normal
+
+
 def split_lengthwise(mesh, stringer_width_mm=0.0):
     min_bounds, max_bounds = mesh.bounds
     _, width_axis, _ = _detect_axes(mesh)
