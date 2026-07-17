@@ -19,11 +19,15 @@ from app.core.mesh_ops import board_axes, surface_frame
 # Extra gap added all around every cavity for the insert + glue.
 PLUG_GLUE_CLEARANCE_MM = 0.2
 
-# --- Futures single fin box: APPROXIMATE routing dimensions ---------------
+# --- Futures fin box: APPROXIMATE routing dimensions ----------------------
 # Best-effort values; verify against the official Futures routing template
-# before cutting real boards. Plan = "stadium" (rectangle + semicircular ends).
-FUTURES_BOX_LENGTH_MM = 122.0  # overall slot length, tip to tip
-FUTURES_BOX_WIDTH_MM = 11.0  # slot width (= diameter of the rounded ends)
+# before cutting real boards. The pocket has TWO tiers (both stadium-shaped):
+# a shallow, slightly wider/longer flange near the surface, then a narrower
+# body running to the full depth.
+FUTURES_BODY_LENGTH_MM = 122.0  # main (lower) body length, tip to tip
+FUTURES_BODY_WIDTH_MM = 11.0  # main body width (= diameter of the rounded ends)
+FUTURES_FLANGE_MARGIN_MM = 2.0  # flange is this much wider/longer, per side
+FUTURES_FLANGE_DEPTH_MM = 4.0  # flange (top flat) depth from the surface
 FUTURES_DEPTH_SIDE_MM = 16.0  # deep version (side fins)
 FUTURES_DEPTH_CENTER_MM = 12.0  # shallower version (center fin)
 
@@ -103,6 +107,15 @@ def _place_on_surface(
     return placed
 
 
+def _plug_position(mesh, tail_distance_mm, center_offset_mm):
+    """(length_pos, width_pos) of a plug centre in world coords."""
+    length_axis, width_axis, _ = board_axes(mesh)
+    min_bounds, max_bounds = mesh.bounds
+    length_pos = min_bounds[length_axis] + tail_distance_mm
+    width_pos = (min_bounds[width_axis] + max_bounds[width_axis]) / 2 + center_offset_mm
+    return length_pos, width_pos
+
+
 def _plug_solid(
     mesh,
     base_polygon,
@@ -125,11 +138,7 @@ def _plug_solid(
     footprint = base_polygon.buffer(expand) if expand > 0 else base_polygon
     local = _extrude_pocket(footprint, depth_mm + clearance_mm + deeper_mm, above_mm)
 
-    length_axis, width_axis, thickness_axis = board_axes(mesh)
-    min_bounds, max_bounds = mesh.bounds
-    length_pos = min_bounds[length_axis] + tail_distance_mm
-    width_pos = (min_bounds[width_axis] + max_bounds[width_axis]) / 2 + center_offset_mm
-
+    length_pos, width_pos = _plug_position(mesh, tail_distance_mm, center_offset_mm)
     min_x, min_y, max_x, max_y = footprint.bounds
     return _place_on_surface(
         mesh,
@@ -181,22 +190,63 @@ def _single_fin_solid(
     )
 
 
-def _futures_fin_solid(
-    mesh, tail, center_offset, angle_deg, depth, above, lateral, deeper
-):
-    base = _stadium_polygon(FUTURES_BOX_LENGTH_MM, FUTURES_BOX_WIDTH_MM)
-    side = 1.0 if center_offset >= 0 else -1.0  # toe toward the centreline
-    return _plug_solid(
-        mesh,
-        base,
-        depth,
-        tail,
-        center_offset,
-        side * angle_deg,
+def _futures_cavity(mesh, tail, center_offset, angle_deg, depth, above):
+    """Two-tier Futures cavity: a shallow wide flange over a narrower body."""
+    clr = PLUG_GLUE_CLEARANCE_MM
+    body = _extrude_pocket(
+        _stadium_polygon(
+            FUTURES_BODY_LENGTH_MM + 2 * clr, FUTURES_BODY_WIDTH_MM + 2 * clr
+        ),
+        depth + clr,
         above,
+    )
+    flange_expand = clr + FUTURES_FLANGE_MARGIN_MM
+    flange = _extrude_pocket(
+        _stadium_polygon(
+            FUTURES_BODY_LENGTH_MM + 2 * flange_expand,
+            FUTURES_BODY_WIDTH_MM + 2 * flange_expand,
+        ),
+        FUTURES_FLANGE_DEPTH_MM + clr,
+        above,
+    )
+    local = trimesh.boolean.union([body, flange])
+
+    length_pos, width_pos = _plug_position(mesh, tail, center_offset)
+    side = 1.0 if center_offset >= 0 else -1.0  # toe toward the centreline
+    span = FUTURES_BODY_WIDTH_MM + 2 * flange_expand
+    length_span = FUTURES_BODY_LENGTH_MM + 2 * flange_expand
+    return _place_on_surface(
+        mesh,
+        local,
+        length_pos,
+        width_pos,
+        length_span,
+        span,
+        side * angle_deg,
         bottom=True,
-        lateral_mm=lateral,
-        deeper_mm=deeper,
+    )
+
+
+def _futures_support(mesh, tail, center_offset, angle_deg, depth, contour, bottom_mm):
+    """Solid boss enclosing the (widest) Futures flange with a contour wall."""
+    expand = PLUG_GLUE_CLEARANCE_MM + FUTURES_FLANGE_MARGIN_MM + contour
+    footprint = _stadium_polygon(
+        FUTURES_BODY_LENGTH_MM + 2 * expand, FUTURES_BODY_WIDTH_MM + 2 * expand
+    )
+    local = _extrude_pocket(footprint, depth + PLUG_GLUE_CLEARANCE_MM + bottom_mm, 0.0)
+
+    length_pos, width_pos = _plug_position(mesh, tail, center_offset)
+    side = 1.0 if center_offset >= 0 else -1.0
+    min_x, min_y, max_x, max_y = footprint.bounds
+    return _place_on_surface(
+        mesh,
+        local,
+        length_pos,
+        width_pos,
+        max_x - min_x,
+        max_y - min_y,
+        side * angle_deg,
+        bottom=True,
     )
 
 
@@ -238,32 +288,28 @@ def single_fin_cavity(
 def futures_fin_cavity_side(
     mesh, tail_distance_mm, center_offset_mm, angle_deg=0.0, above_mm=1.0
 ):
-    """Deep Futures cavity, for the side fins."""
-    return _futures_fin_solid(
+    """Deep two-tier Futures cavity, for the side fins."""
+    return _futures_cavity(
         mesh,
         tail_distance_mm,
         center_offset_mm,
         angle_deg,
         FUTURES_DEPTH_SIDE_MM,
         above_mm,
-        0.0,
-        0.0,
     )
 
 
 def futures_fin_cavity_center(
     mesh, tail_distance_mm, center_offset_mm=0.0, angle_deg=0.0, above_mm=1.0
 ):
-    """Shallower Futures cavity, for the center fin."""
-    return _futures_fin_solid(
+    """Shallower two-tier Futures cavity, for the center fin."""
+    return _futures_cavity(
         mesh,
         tail_distance_mm,
         center_offset_mm,
         angle_deg,
         FUTURES_DEPTH_CENTER_MM,
         above_mm,
-        0.0,
-        0.0,
     )
 
 
@@ -318,13 +364,12 @@ def futures_fin_support_side(
     mesh, tail_distance_mm, center_offset_mm, angle_deg, contour_mm, bottom_mm
 ):
     """Solid boss around a deep Futures side cavity (on the hull)."""
-    return _futures_fin_solid(
+    return _futures_support(
         mesh,
         tail_distance_mm,
         center_offset_mm,
         angle_deg,
         FUTURES_DEPTH_SIDE_MM,
-        0.0,
         contour_mm,
         bottom_mm,
     )
