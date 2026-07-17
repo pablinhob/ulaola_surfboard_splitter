@@ -1,4 +1,7 @@
+import logging
+
 import numpy as np
+import pymeshfix
 import trimesh
 from trimesh.intersections import slice_mesh_plane
 
@@ -17,7 +20,30 @@ SPLIT_PATTERNS = {
 
 
 def load_stl(path):
-    return trimesh.load(path)
+    return ensure_watertight(trimesh.load(path, force="mesh"))
+
+
+def ensure_watertight(mesh):
+    """Repair a non-watertight mesh so downstream booleans (split, hollow, plug
+    subtraction) work on every piece — the stringer especially, which is a raw
+    slice of the input and inherits any holes it has.
+    """
+    if mesh.is_watertight:
+        return mesh
+
+    vertices, faces = pymeshfix.clean_from_arrays(
+        np.asarray(mesh.vertices, dtype=np.float64),
+        np.asarray(mesh.faces, dtype=np.int32),
+    )
+    repaired = trimesh.Trimesh(vertices, faces, process=False)
+    if repaired.is_watertight:
+        logging.info(
+            "Input mesh was not watertight; repaired it "
+            f"({len(mesh.faces)} -> {len(repaired.faces)} faces)."
+        )
+    else:
+        logging.warning("Input mesh could not be fully repaired to watertight.")
+    return repaired
 
 
 def _detect_axes(mesh):
