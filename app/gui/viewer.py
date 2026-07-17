@@ -6,6 +6,7 @@ from app.config import (
     BOARD_COLOR,
     BOUNDING_BOX_EDGE_COLOR,
     CUTLAP_COLOR,
+    PLUG_SUPPORT_COLOR,
     SPLIT_EDGE_COLOR,
     STRINGER_COLOR,
     VIEWER_BACKGROUND_COLOR,
@@ -120,7 +121,9 @@ class MeshViewer(QtInteractor):
         self._marker_actors = []
         combined_bounds = None
         for key, segment_mesh in pieces.items():
-            if key[0] == "stringer":
+            if key[0] == "support":
+                piece_color = PLUG_SUPPORT_COLOR
+            elif key[0] == "stringer":
                 piece_color = STRINGER_COLOR
             elif len(key) == 3 and key[1] == "cutlap":
                 piece_color = CUTLAP_COLOR

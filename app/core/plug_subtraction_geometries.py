@@ -103,7 +103,7 @@ def _place_on_surface(
     return placed
 
 
-def _plug_cavity(
+def _plug_solid(
     mesh,
     base_polygon,
     depth_mm,
@@ -112,11 +112,18 @@ def _plug_cavity(
     toe_deg,
     above_mm,
     bottom,
+    lateral_mm=0.0,
+    deeper_mm=0.0,
     clearance_mm=PLUG_GLUE_CLEARANCE_MM,
 ):
-    """Position a cavity (given its 2D footprint) on the board surface."""
-    footprint = base_polygon.buffer(clearance_mm) if clearance_mm > 0 else base_polygon
-    local = _extrude_pocket(footprint, depth_mm + clearance_mm, above_mm)
+    """Position a plug solid (given its 2D footprint) on the board surface.
+
+    ``lateral_mm`` / ``deeper_mm`` grow the footprint outward and the depth
+    downward — used to turn a cavity into its solid support (boss).
+    """
+    expand = clearance_mm + lateral_mm
+    footprint = base_polygon.buffer(expand) if expand > 0 else base_polygon
+    local = _extrude_pocket(footprint, depth_mm + clearance_mm + deeper_mm, above_mm)
 
     length_axis, width_axis, thickness_axis = board_axes(mesh)
     min_bounds, max_bounds = mesh.bounds
@@ -136,20 +143,79 @@ def _plug_cavity(
     )
 
 
+# Each plug has one internal builder used for both its cavity (lateral=deeper=0)
+# and its solid support (lateral=contour, deeper=bottom margin).
+
+
+def _leash_solid(mesh, tail, center, diameter, depth, above, lateral, deeper):
+    base = Point(0.0, 0.0).buffer(diameter / 2.0, resolution=_ARC_RESOLUTION)
+    return _plug_solid(
+        mesh,
+        base,
+        depth,
+        tail,
+        center,
+        0.0,
+        above,
+        bottom=False,
+        lateral_mm=lateral,
+        deeper_mm=deeper,
+    )
+
+
+def _single_fin_solid(
+    mesh, tail, box_long, box_width, box_depth, above, lateral, deeper
+):
+    base = _rounded_rectangle(box_long, box_width, SINGLE_FIN_CORNER_RADIUS_MM)
+    return _plug_solid(
+        mesh,
+        base,
+        box_depth,
+        tail,
+        0.0,
+        0.0,
+        above,
+        bottom=True,
+        lateral_mm=lateral,
+        deeper_mm=deeper,
+    )
+
+
+def _futures_fin_solid(
+    mesh, tail, center_offset, angle_deg, depth, above, lateral, deeper
+):
+    base = _stadium_polygon(FUTURES_BOX_LENGTH_MM, FUTURES_BOX_WIDTH_MM)
+    side = 1.0 if center_offset >= 0 else -1.0  # toe toward the centreline
+    return _plug_solid(
+        mesh,
+        base,
+        depth,
+        tail,
+        center_offset,
+        side * angle_deg,
+        above,
+        bottom=True,
+        lateral_mm=lateral,
+        deeper_mm=deeper,
+    )
+
+
+# --- cavities (to subtract) ------------------------------------------------
+
+
 def leash_plug_cavity(
     mesh, tail_distance_mm, center_offset_mm, diameter_mm, depth_mm, above_mm=1.0
 ):
     """Cylindrical leash-plug cavity, routed from the deck (top surface)."""
-    base = Point(0.0, 0.0).buffer(diameter_mm / 2.0, resolution=_ARC_RESOLUTION)
-    return _plug_cavity(
+    return _leash_solid(
         mesh,
-        base,
-        depth_mm,
         tail_distance_mm,
         center_offset_mm,
-        0.0,
+        diameter_mm,
+        depth_mm,
         above_mm,
-        bottom=False,
+        0.0,
+        0.0,
     )
 
 
@@ -157,27 +223,15 @@ def single_fin_cavity(
     mesh, tail_distance_mm, box_long_mm, box_width_mm, box_depth_mm, above_mm=1.0
 ):
     """Single fin box cavity (rounded vertical edges), routed from the hull."""
-    base = _rounded_rectangle(box_long_mm, box_width_mm, SINGLE_FIN_CORNER_RADIUS_MM)
-    return _plug_cavity(
-        mesh, base, box_depth_mm, tail_distance_mm, 0.0, 0.0, above_mm, bottom=True
-    )
-
-
-def _futures_fin_cavity(
-    mesh, tail_distance_mm, center_offset_mm, angle_deg, depth_mm, above_mm
-):
-    base = _stadium_polygon(FUTURES_BOX_LENGTH_MM, FUTURES_BOX_WIDTH_MM)
-    # Toe toward the centreline; the side is given by which half we are on.
-    side = 1.0 if center_offset_mm >= 0 else -1.0
-    return _plug_cavity(
+    return _single_fin_solid(
         mesh,
-        base,
-        depth_mm,
         tail_distance_mm,
-        center_offset_mm,
-        side * angle_deg,
+        box_long_mm,
+        box_width_mm,
+        box_depth_mm,
         above_mm,
-        bottom=True,  # fin boxes are routed from the hull (underside)
+        0.0,
+        0.0,
     )
 
 
@@ -185,13 +239,15 @@ def futures_fin_cavity_side(
     mesh, tail_distance_mm, center_offset_mm, angle_deg=0.0, above_mm=1.0
 ):
     """Deep Futures cavity, for the side fins."""
-    return _futures_fin_cavity(
+    return _futures_fin_solid(
         mesh,
         tail_distance_mm,
         center_offset_mm,
         angle_deg,
         FUTURES_DEPTH_SIDE_MM,
         above_mm,
+        0.0,
+        0.0,
     )
 
 
@@ -199,11 +255,76 @@ def futures_fin_cavity_center(
     mesh, tail_distance_mm, center_offset_mm=0.0, angle_deg=0.0, above_mm=1.0
 ):
     """Shallower Futures cavity, for the center fin."""
-    return _futures_fin_cavity(
+    return _futures_fin_solid(
         mesh,
         tail_distance_mm,
         center_offset_mm,
         angle_deg,
         FUTURES_DEPTH_CENTER_MM,
         above_mm,
+        0.0,
+        0.0,
+    )
+
+
+# --- supports (solid bosses, grown by contour + bottom margin) -------------
+
+
+def leash_plug_support(
+    mesh,
+    tail_distance_mm,
+    center_offset_mm,
+    diameter_mm,
+    depth_mm,
+    contour_mm,
+    bottom_mm,
+):
+    """Solid boss around the leash cavity (on the deck)."""
+    return _leash_solid(
+        mesh,
+        tail_distance_mm,
+        center_offset_mm,
+        diameter_mm,
+        depth_mm,
+        0.0,
+        contour_mm,
+        bottom_mm,
+    )
+
+
+def single_fin_support(
+    mesh,
+    tail_distance_mm,
+    box_long_mm,
+    box_width_mm,
+    box_depth_mm,
+    contour_mm,
+    bottom_mm,
+):
+    """Solid boss around the single fin box (on the hull)."""
+    return _single_fin_solid(
+        mesh,
+        tail_distance_mm,
+        box_long_mm,
+        box_width_mm,
+        box_depth_mm,
+        0.0,
+        contour_mm,
+        bottom_mm,
+    )
+
+
+def futures_fin_support_side(
+    mesh, tail_distance_mm, center_offset_mm, angle_deg, contour_mm, bottom_mm
+):
+    """Solid boss around a deep Futures side cavity (on the hull)."""
+    return _futures_fin_solid(
+        mesh,
+        tail_distance_mm,
+        center_offset_mm,
+        angle_deg,
+        FUTURES_DEPTH_SIDE_MM,
+        0.0,
+        contour_mm,
+        bottom_mm,
     )

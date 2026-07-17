@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import BOARD_COLOR, CUTLAP_COLOR, STRINGER_COLOR
+from app.config import BOARD_COLOR, CUTLAP_COLOR, PLUG_SUPPORT_COLOR, STRINGER_COLOR
 from app.core.hollow import hollow_piece
 from app.gui.panels import CUTLAP_LABELS, PIECE_LABELS
 from app.gui.viewer import MeshViewer
@@ -56,6 +56,8 @@ def _bounds_overlap(mesh_a, mesh_b):
 
 def _piece_name(key):
     """Human-readable, unique-ish name used for each object in the export file."""
+    if key[0] == "support":
+        return f"Support {key[1] + 1} - {_piece_name(key[2])}"
     if len(key) == 1:
         return PIECE_LABELS.get(key[0], str(key[0]))
     if len(key) == 3 and key[1] == "cutlap":
@@ -67,7 +69,9 @@ def _piece_name(key):
 
 def _piece_color(key):
     """RGBA colour for a piece, matching the viewer's colour scheme."""
-    if key[0] == "stringer":
+    if key[0] == "support":
+        name = PLUG_SUPPORT_COLOR
+    elif key[0] == "stringer":
         name = STRINGER_COLOR
     elif len(key) == 3 and key[1] == "cutlap":
         name = CUTLAP_COLOR
@@ -78,7 +82,13 @@ def _piece_color(key):
 
 class ExportWindow(QMainWindow):
     def __init__(
-        self, pieces, hollow_params, thickness_axis, plug_solids=None, parent=None
+        self,
+        pieces,
+        hollow_params,
+        thickness_axis,
+        plug_solids=None,
+        plug_supports=None,
+        parent=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Export hollowing")
@@ -90,6 +100,7 @@ class ExportWindow(QMainWindow):
         self._hollow_params = hollow_params
         self._thickness_axis = thickness_axis
         self._plug_solids = plug_solids or []
+        self._plug_supports = plug_supports or []
         self._final_pieces = {}
 
         central = QWidget()
@@ -147,6 +158,30 @@ class ExportWindow(QMainWindow):
                 logging.error(f"Could not subtract plug from piece {key}: {exc}")
         return piece
 
+    def _support_fragments(self, key, cell_mesh):
+        """Support bosses clipped to this cell (from its original solid) and drilled.
+
+        Intersecting each support with the original solid cell both splits the
+        support at the cut seams and keeps it inside the board; the plug cavity
+        is then drilled into it too.
+        """
+        fragments = {}
+        if not cell_mesh.is_volume:
+            return fragments
+        for index, support in enumerate(self._plug_supports):
+            if not _bounds_overlap(cell_mesh, support):
+                continue
+            try:
+                fragment = trimesh.boolean.intersection([cell_mesh, support])
+            except Exception as exc:
+                logging.error(f"Could not build support for piece {key}: {exc}")
+                continue
+            if fragment.is_empty or len(fragment.faces) == 0:
+                continue
+            frag_key = ("support", index, key)
+            fragments[frag_key] = self._subtract_plugs(frag_key, fragment)
+        return fragments
+
     def closeEvent(self, event):
         # The VTK render window must be finalised explicitly; otherwise closing
         # the window crashes when VTK tears itself down during destruction.
@@ -179,6 +214,8 @@ class ExportWindow(QMainWindow):
 
             # Carve the plug cavities out of the already-cut, hollowed piece.
             final_pieces[key] = self._subtract_plugs(key, piece)
+            # Solid support bosses belonging to this cell (cut at its seams).
+            final_pieces.update(self._support_fragments(key, mesh))
 
         self.unsetCursor()
 

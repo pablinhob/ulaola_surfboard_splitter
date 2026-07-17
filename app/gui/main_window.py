@@ -26,8 +26,11 @@ from app.core.plug_position import (
     MARKER_PROTRUSION_MM,
     SUBTRACTION_MARGIN_MM,
     leash_plug_markers,
+    leash_plug_supports,
     single_fin_markers,
+    single_fin_supports,
     twin_fin_markers,
+    twin_fin_supports,
 )
 from app.gui.console import LogConsole
 from app.gui.export_window import ExportWindow
@@ -149,6 +152,35 @@ class MainWindow(QMainWindow):
                 above_mm=above_mm,
             )
         return solids
+
+    def _collect_plug_supports(self):
+        """Solid support bosses (leash + fins) for the current parameters."""
+        leash = self.leash_plug_panel
+        supports = leash_plug_supports(
+            self.mesh,
+            leash.tail_distance_spin.value(),
+            leash.center_spin.value(),
+            leash.diameter_spin.value(),
+            leash.depth_spin.value(),
+        )
+
+        fin = self.fin_plug_panel
+        if fin.type_combo.currentIndex() == 0:  # Single Fin
+            supports += single_fin_supports(
+                self.mesh,
+                fin.single_tail_distance_spin.value(),
+                fin.single_box_long_spin.value(),
+                fin.single_box_width_spin.value(),
+                fin.single_box_deep_spin.value(),
+            )
+        else:  # Twin Fin
+            supports += twin_fin_supports(
+                self.mesh,
+                fin.twin_tail_distance_spin.value(),
+                fin.twin_center_distance_spin.value(),
+                fin.twin_angle_spin.value(),
+            )
+        return supports
 
     def _draw_plug_markers(self):
         """Show the green plug markers (leash + fins) for the current parameters."""
@@ -464,10 +496,16 @@ class MainWindow(QMainWindow):
         )
         thickness_axis = detect_thickness_axis(self.mesh)
         plug_solids = self._collect_plug_solids(SUBTRACTION_MARGIN_MM)
+        plug_supports = self._collect_plug_supports()
 
         logging.info("Exporting hollowing for all pieces...")
         self.export_window = ExportWindow(
-            self.original_pieces, hollow_params, thickness_axis, plug_solids, self
+            self.original_pieces,
+            hollow_params,
+            thickness_axis,
+            plug_solids,
+            plug_supports,
+            self,
         )
         self.export_window.show()
         self.export_window.process_and_show()

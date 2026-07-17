@@ -4,6 +4,7 @@ SPLIT_EDGE_COLOR = "black"
 BOARD_COLOR = "white"
 STRINGER_COLOR = "#deb887"
 CUTLAP_COLOR = "#dceac2"
+PLUG_SUPPORT_COLOR = "#2b6cff"
 
 PIECE_RADIUS_MIN_MM = 40
 PIECE_RADIUS_MAX_MM = 300
@@ -81,3 +82,9 @@ FIN_TWIN_ANGLE_DEFAULT_DEG = 4
 # Fixed prism size for the twin-fin markers (no dedicated inputs yet).
 FIN_TWIN_BOX_LONG_MM = 120
 FIN_TWIN_BOX_WIDTH_MM = 20
+
+# Solid support (boss) added around each plug cavity so there is material to
+# drill into: it extends this far past the cavity walls (lateral contour) and
+# this far past the cavity bottom.
+PLUG_HOLES_SOLID_CONTOUR_MM = 4
+PLUG_HOLES_SOLID_BOTTOM_MM = 2
